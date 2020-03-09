@@ -11,6 +11,7 @@ import urllib
 import requests
 import xbmcvfs
 from zipfile import ZipFile
+import glob
 
 ADDON = xbmcaddon.Addon(id="script.telerising-cloudcontrol")
 addon_name = ADDON.getAddonInfo('name')
@@ -93,14 +94,18 @@ if address  == '0.0.0.0':
 if machine == 'AMD64':
     binpath = os.path.join(addonpath, "bin\\")
     runpath = os.path.join(datapath, "bin\\")
+    temppath = os.path.join(datapath, "temp\\")
 else:
     binpath = os.path.join(addonpath, "bin/")
     runpath = os.path.join(datapath, "bin/")
+    temppath = os.path.join(datapath, "temp/")
 
 def create_folders():
     # deal with bug that happens if the datapath not exist
     if not os.path.exists(runpath):
         os.makedirs(runpath)
+    if not os.path.exists(temppath):
+        os.makedirs(temppath)
 create_folders()
 
 # Install needed Files
@@ -269,13 +274,13 @@ check_ffmpeg()
 # Download Recording m3u from Telerising Server
 def get_recordings():
     url = 'http://' + address + ':' + port + '/?file=recordings.m3u&bw='+ bandwith +'&platform=hls5&ffmpeg=true&profile='+ audio_profile
-    log("Downloading recordings.m3u.... " + url + ' to ' + datapath + 'recordings.m3u', xbmc.LOGNOTICE)
+    log("Downloading recordings.m3u.... " + url + ' to ' + temppath + 'recordings.m3u', xbmc.LOGNOTICE)
     recordings = urllib.URLopener()
-    recordings.retrieve( url, datapath + 'recordings.m3u')
+    recordings.retrieve( url, temppath + 'recordings.m3u')
 get_recordings()
 
 ## Read m3u and Translate to Listitem ##
-m3u8 = os.path.join(datapath, 'recordings.m3u')
+m3u8 = os.path.join(temppath, 'recordings.m3u')
 
 # Create List
 recordings = list()
@@ -305,20 +310,28 @@ selected = dialog.select('Manage Cloud Recordings', recordings, useDetails=True)
 
 # read Listitem
 li = recordings[selected]
+fo.close()
 
 #Select Download / Play / Delete from Listitem
 def manage_recordings():
     recording_title = li.getProperty('title').replace(' _ ',' ').decode('utf-8')
-    ffmpeg_command = li.getProperty('ffmpeg').replace('pipe:1', '"' + storage_path + recording_title + '.ts' + '"')
+    src_movie = temppath + recording_title + '.ts'
+    dest_movie = storage_path + recording_title + '.ts'
+    ffmpeg_command = li.getProperty('ffmpeg').replace('pipe:1', '"' + src_movie + '"')
     recording_id = li.getProperty('ffmpeg').split('&bw')[0].split('recording=')[1]
     dialog = xbmcgui.Dialog()
     planned_string = '\[PLANNED\]'
+    src_json = temppath + recording_title + '_src.json'
+    dest_json = temppath + recording_title + '_dest.json'
+
+
     if re.search(planned_string,  li.getProperty('title').replace(' _ ',' ').decode('utf-8')):
         ret_cancel = dialog.yesno(li.getLabel() + ' ' + li.getLabel2(), 'Do you want to cancel this planned Recording?')
         ret = 'skipped'
     else:
         ret = dialog.select(li.getLabel() + ' ' + li.getLabel2(), ['Download', 'Play', 'Delete'])
         ret_cancel = False
+
     ## Download
     if ret == 0:
         if storage_path == 'choose':
@@ -327,11 +340,6 @@ def manage_recordings():
             xbmc.sleep(5000)
             quit()
         else:
-            if os.path.isfile(runpath + 'dest.json'):
-                log(machine + " Multiple Downloads currently not supported", xbmc.LOGNOTICE)
-                notify(addon_name, 'Multiple Downloads currently not supported',icon=xbmcgui.NOTIFICATION_INFO)
-                xbmc.sleep(5000)
-                quit()
             log("Selectet Recording ID for Download = " + recording_id, xbmc.LOGNOTICE)
             if machine == 'aarch64':
                 #ffmpegbin = '/data/data/%s/ffmpeg' % android_get_current_appid()
@@ -345,11 +353,12 @@ def manage_recordings():
             elif machine == 'AMD64':
                 ffmpegbin = runpath +  'ffmpeg.exe'
                 ffprobebin = runpath + 'ffprobe.exe'
+                percent = 100
+                pDialog = xbmcgui.DialogProgressBG()
+                pDialog.create('Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
                 probe_duration_src = ffprobebin + ' -v quiet -print_format json -show_format ' + '"http://' + address + ':' + port + '/index.m3u8?recording=' + recording_id + '&bw=' + bandwith + '&platform=hls5&profile=' + audio_profile + '"'
-                log(probe_duration_src, xbmc.LOGNOTICE)  #
-                subprocess.Popen(probe_duration_src + ' >' + ' "' + runpath + 'src.json' + '"', shell=True)
-                src_json = runpath + 'src.json'
-                xbmc.sleep(2000)
+                subprocess.Popen(probe_duration_src + ' >' + ' "' + src_json + '"', shell=True)
+                xbmc.sleep(10000)
                 retries = 10
                 while retries > 0:
                     try:
@@ -358,66 +367,87 @@ def manage_recordings():
                             src_status = json.load(f_src)
                             src_duration = src_status["format"].get("duration")
                         break
-                    except IOError as e:
+                    except (IOError, KeyError, AttributeError) as e:
                         xbmc.sleep(1000)
                         retries -= 1
                 if retries == 0:
                     notify(addon_name, "Could not open Json SRC File")
                     log("Could not open Json SRC File", xbmc.LOGERROR)
-                percent = 100
-                pDialog = xbmcgui.DialogProgressBG()
-                pDialog.create('Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
                 command = ffmpegbin + ' -y -i' + ffmpeg_command
-                log('running ' + command , xbmc.LOGNOTICE)
+                log('Started Downloading ' + recording_id, xbmc.LOGNOTICE)
                 running_ffmpeg = [Popen(command, shell=True)]
-
+                xbmc.sleep(10000)
                 while running_ffmpeg:
                     for proc in running_ffmpeg:
                         retcode = proc.poll()
                         if retcode is not None:  # Process finished.
                             running_ffmpeg.remove(proc)
-                            log('finished' + command, xbmc.LOGNOTICE)
+                            percent = 0
+                            pDialog.update(100 - percent, 'Downloading ' + recording_title + ' ' + quality,"%s Prozent verbleibend" % percent)
+                            xbmc.sleep(1000)
                             pDialog.close()
-                            notify(addon_name, "Download Finished")
-                            if os.path.isfile(runpath + 'src.json'):
-                                xbmcvfs.delete(runpath + 'src.json')
-                            if os.path.isfile(runpath + 'dest.json'):
-                                xbmcvfs.delete(runpath + 'dest.json')
+                            f_dest.close()
+                            f_src.close()
+                            log('finished Downloading ' + recording_id, xbmc.LOGNOTICE)
+                            notify(addon_name, recording_title + " Download Finished", icon=xbmcgui.NOTIFICATION_INFO)
+
+                            ## Copy Downloaded Files to Destination
+                            #percent = 100
+                            #src_size = xbmcvfs.Stat(src_movie).st_size()
+                            cDialog = xbmcgui.DialogProgressBG()
+                            #cDialog.create('Copy ' + recording_title + ' to Destination',"%s Prozent verbleibend" % percent)
+                            cDialog.create('Copy ' + recording_title + ' to Destination',"Status is currently not supportet, please wait until finish")
+                            xbmc.sleep(2000)
+                            log('copy ' + recording_id + ' to Destination' , xbmc.LOGNOTICE)
+                            notify(addon_name, 'Copy ' + recording_title + ' to Destiantion' , icon=xbmcgui.NOTIFICATION_INFO)
+                            #copy_movie = xbmcvfs.copy(src_movie, dest_movie)
+                            xbmcvfs.copy(src_movie, dest_movie)
+                            #while copy_movie:
+                            #    xbmc.sleep(2000)
+                            #    dest_size = xbmcvfs.Stat(dest_movie).st_size()
+                            #    log('size source is = ' + src_size, xbmc.LOGNOTICE)
+                            #    log('size destination is = ' + dest_size, xbmc.LOGNOTICE)
+                            #    log('copy ' + recording_id + ' to Destination', xbmc.LOGNOTICE)
+                            #    percent = int(100) - int(dest_size) * int(100) / int(src_size)
+                            #    cDialog.update(100 - percent, 'Copy ' + recording_title + ' to Destination', "%s Prozent verbleibend" % percent)
+                            cDialog.close()
+
+                            ## Delete all old Files
+                            xbmcvfs.rmdir(temppath, force=True)
                             break
                     else:  # # Still Running
-                        xbmc.sleep(2000)
-                        probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + storage_path + recording_title + '.ts' + '"'
-                        subprocess.Popen(probe_duration_dest + ' >' + ' "' + runpath + 'dest.json' + '"', shell=True)
-                        dest_json = runpath + 'dest.json'
+                        probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + src_movie + '"'
+                        subprocess.Popen(probe_duration_dest + ' >' + ' "' + dest_json + '"', shell=True)
+                        xbmc.sleep(7000)
                         retries = 10
                         while retries > 0:
                             try:
                                 with open(dest_json, 'r') as f_dest:
-                                    xbmc.sleep(3000)
                                     dest_status = json.load(f_dest)
                                     dest_duration = dest_status["format"].get("duration")
                                 break
-                            except IOError as e:
-                                xbmc.sleep(1000)
+                            except (IOError, KeyError, AttributeError) as e:
+                                xbmc.sleep(7000)
                                 retries -= 1
                         if retries == 0:
                             notify(addon_name, "Could not open Json Dest File", icon=xbmcgui.NOTIFICATION_ERROR)
                             log("Could not open Json Dest File", xbmc.LOGERROR)
                         percent = int(100) - int(dest_duration.replace('.', '')) * int(100) / int(src_duration.replace('.', ''))
                         pDialog.update(100 - percent, 'Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
-                        f_dest.close()
                         continue
+                f_dest.close()
                 f_src.close()
                 pDialog.close()
 
             elif machine == 'x86_64':
                 ffmpegbin = runpath +  'ffmpeg'
                 ffprobebin = runpath + 'ffprobe'
+                percent = 100
+                pDialog = xbmcgui.DialogProgressBG()
+                pDialog.create('Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
                 probe_duration_src = ffprobebin + ' -v quiet -print_format json -show_format ' + '"http://' + address + ':' + port + '/index.m3u8?recording=' + recording_id + '&bw=' + bandwith + '&platform=hls5&profile=' + audio_profile + '"'
-                log(probe_duration_src, xbmc.LOGNOTICE)  #
-                subprocess.Popen(probe_duration_src + ' >' + ' "' + runpath + 'src.json' + '"', shell=True)
-                src_json = runpath + 'src.json'
-                xbmc.sleep(2000)
+                subprocess.Popen(probe_duration_src + ' >' + ' "' + src_json + '"', shell=True)
+                xbmc.sleep(10000)
                 retries = 10
                 while retries > 0:
                     try:
@@ -426,47 +456,67 @@ def manage_recordings():
                             src_status = json.load(f_src)
                             src_duration = src_status["format"].get("duration")
                         break
-                    except IOError as e:
+                    except (IOError, KeyError, AttributeError) as e:
                         xbmc.sleep(1000)
                         retries -= 1
                 if retries == 0:
                     notify(addon_name, "Could not open Json SRC File")
                     log("Could not open Json SRC File", xbmc.LOGERROR)
-                percent = 100
-                pDialog = xbmcgui.DialogProgressBG()
-                pDialog.create('Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
                 command = ffmpegbin + ' -y -i' + ffmpeg_command
-                log('running ' + command , xbmc.LOGNOTICE)
+                log('Started Downloading ' + recording_id, xbmc.LOGNOTICE)
                 running_ffmpeg = [Popen(command, shell=True)]
-
+                xbmc.sleep(10000)
                 while running_ffmpeg:
                     for proc in running_ffmpeg:
                         retcode = proc.poll()
                         if retcode is not None:  # Process finished.
                             running_ffmpeg.remove(proc)
-                            log('finished' + command, xbmc.LOGNOTICE)
+                            percent = 0
+                            pDialog.update(100 - percent, 'Downloading ' + recording_title + ' ' + quality,"%s Prozent verbleibend" % percent)
+                            xbmc.sleep(1000)
                             pDialog.close()
-                            notify(addon_name, "Download Finished")
-                            if os.path.isfile(runpath + 'src.json'):
-                                xbmcvfs.delete(runpath + 'src.json')
-                            if os.path.isfile(runpath + 'dest.json'):
-                                xbmcvfs.delete(runpath + 'dest.json')
+                            f_dest.close()
+                            f_src.close()
+                            log('finished Downloading ' + recording_id, xbmc.LOGNOTICE)
+                            notify(addon_name, recording_title + " Download Finished", icon=xbmcgui.NOTIFICATION_INFO)
+
+                            ## Copy Downloaded Files to Destination
+                            #percent = 100
+                            #src_size = xbmcvfs.Stat(src_movie).st_size()
+                            cDialog = xbmcgui.DialogProgressBG()
+                            #cDialog.create('Copy ' + recording_title + ' to Destination',"%s Prozent verbleibend" % percent)
+                            cDialog.create('Copy ' + recording_title + ' to Destination',"Status is currently not supportet, please wait until finish")
+                            xbmc.sleep(2000)
+                            log('copy ' + recording_id + ' to Destination' , xbmc.LOGNOTICE)
+                            notify(addon_name, 'Copy ' + recording_title + ' to Destiantion' , icon=xbmcgui.NOTIFICATION_INFO)
+                            #copy_movie = xbmcvfs.copy(src_movie, dest_movie)
+                            xbmcvfs.copy(src_movie, dest_movie)
+                            #while copy_movie:
+                            #    xbmc.sleep(2000)
+                            #    dest_size = xbmcvfs.Stat(dest_movie).st_size()
+                            #    log('size source is = ' + src_size, xbmc.LOGNOTICE)
+                            #    log('size destination is = ' + dest_size, xbmc.LOGNOTICE)
+                            #    log('copy ' + recording_id + ' to Destination', xbmc.LOGNOTICE)
+                            #    percent = int(100) - int(dest_size) * int(100) / int(src_size)
+                            #    cDialog.update(100 - percent, 'Copy ' + recording_title + ' to Destination', "%s Prozent verbleibend" % percent)
+                            cDialog.close()
+
+                            ## Delete all old Files
+                            xbmcvfs.rmdir(temppath, force=True)
                             break
                     else:  # # Still Running
-                        xbmc.sleep(2000)
-                        probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + storage_path + recording_title + '.ts' + '"'
-                        subprocess.Popen(probe_duration_dest + ' >' + ' "' + runpath + 'dest.json' + '"', shell=True)
-                        dest_json = runpath + 'dest.json'
+                        probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + src_movie + '"'
+                        subprocess.Popen(probe_duration_dest + ' >' + ' "' + dest_json + '"', shell=True)
+                        xbmc.sleep(7000)
                         retries = 10
                         while retries > 0:
                             try:
                                 with open(dest_json, 'r') as f_dest:
-                                    xbmc.sleep(5000)
                                     dest_status = json.load(f_dest)
                                     dest_duration = dest_status["format"].get("duration")
                                 break
-                            except IOError as e:
-                                xbmc.sleep(1000)
+                            except (IOError, KeyError, AttributeError) as e:
+                                xbmc.sleep(7000)
                                 retries -= 1
                         if retries == 0:
                             notify(addon_name, "Could not open Json Dest File", icon=xbmcgui.NOTIFICATION_ERROR)
@@ -481,11 +531,12 @@ def manage_recordings():
             elif machine == 'OSX64':
                 ffmpegbin = runpath +  'ffmpeg'
                 ffprobebin = runpath + 'ffprobe'
+                percent = 100
+                pDialog = xbmcgui.DialogProgressBG()
+                pDialog.create('Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
                 probe_duration_src = ffprobebin + ' -v quiet -print_format json -show_format ' + '"http://' + address + ':' + port + '/index.m3u8?recording=' + recording_id + '&bw=' + bandwith + '&platform=hls5&profile=' + audio_profile + '"'
-                log(probe_duration_src, xbmc.LOGNOTICE)  #
-                subprocess.Popen(probe_duration_src + ' >' + ' "' + runpath + 'src.json' + '"', shell=True)
-                src_json = runpath + 'src.json'
-                xbmc.sleep(2000)
+                subprocess.Popen(probe_duration_src + ' >' + ' "' + src_json + '"', shell=True)
+                xbmc.sleep(10000)
                 retries = 10
                 while retries > 0:
                     try:
@@ -494,66 +545,87 @@ def manage_recordings():
                             src_status = json.load(f_src)
                             src_duration = src_status["format"].get("duration")
                         break
-                    except IOError as e:
+                    except (IOError, KeyError, AttributeError) as e:
                         xbmc.sleep(1000)
                         retries -= 1
                 if retries == 0:
                     notify(addon_name, "Could not open Json SRC File")
                     log("Could not open Json SRC File", xbmc.LOGERROR)
-                percent = 100
-                pDialog = xbmcgui.DialogProgressBG()
-                pDialog.create('Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
                 command = ffmpegbin + ' -y -i' + ffmpeg_command
-                log('running ' + command , xbmc.LOGNOTICE)
+                log('Started Downloading ' + recording_id, xbmc.LOGNOTICE)
                 running_ffmpeg = [Popen(command, shell=True)]
-
+                xbmc.sleep(10000)
                 while running_ffmpeg:
                     for proc in running_ffmpeg:
                         retcode = proc.poll()
                         if retcode is not None:  # Process finished.
                             running_ffmpeg.remove(proc)
-                            log('finished' + command, xbmc.LOGNOTICE)
+                            percent = 0
+                            pDialog.update(100 - percent, 'Downloading ' + recording_title + ' ' + quality,"%s Prozent verbleibend" % percent)
+                            xbmc.sleep(1000)
                             pDialog.close()
-                            notify(addon_name, "Download Finished")
-                            if os.path.isfile(runpath + 'src.json'):
-                                xbmcvfs.delete(runpath + 'src.json')
-                            if os.path.isfile(runpath + 'dest.json'):
-                                xbmcvfs.delete(runpath + 'dest.json')
+                            f_dest.close()
+                            f_src.close()
+                            log('finished Downloading ' + recording_id, xbmc.LOGNOTICE)
+                            notify(addon_name, recording_title + " Download Finished", icon=xbmcgui.NOTIFICATION_INFO)
+
+                            ## Copy Downloaded Files to Destination
+                            #percent = 100
+                            #src_size = xbmcvfs.Stat(src_movie).st_size()
+                            cDialog = xbmcgui.DialogProgressBG()
+                            #cDialog.create('Copy ' + recording_title + ' to Destination',"%s Prozent verbleibend" % percent)
+                            cDialog.create('Copy ' + recording_title + ' to Destination',"Status is currently not supportet, please wait until finish")
+                            xbmc.sleep(2000)
+                            log('copy ' + recording_id + ' to Destination' , xbmc.LOGNOTICE)
+                            notify(addon_name, 'Copy ' + recording_title + ' to Destiantion' , icon=xbmcgui.NOTIFICATION_INFO)
+                            #copy_movie = xbmcvfs.copy(src_movie, dest_movie)
+                            xbmcvfs.copy(src_movie, dest_movie)
+                            #while copy_movie:
+                            #    xbmc.sleep(2000)
+                            #    dest_size = xbmcvfs.Stat(dest_movie).st_size()
+                            #    log('size source is = ' + src_size, xbmc.LOGNOTICE)
+                            #    log('size destination is = ' + dest_size, xbmc.LOGNOTICE)
+                            #    log('copy ' + recording_id + ' to Destination', xbmc.LOGNOTICE)
+                            #    percent = int(100) - int(dest_size) * int(100) / int(src_size)
+                            #    cDialog.update(100 - percent, 'Copy ' + recording_title + ' to Destination', "%s Prozent verbleibend" % percent)
+                            cDialog.close()
+
+                            ## Delete all old Files
+                            xbmcvfs.rmdir(temppath, force=True)
                             break
                     else:  # # Still Running
-                        xbmc.sleep(2000)
-                        probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + storage_path + recording_title + '.ts' + '"'
-                        subprocess.Popen(probe_duration_dest + ' >' + ' "' + runpath + 'dest.json' + '"', shell=True)
-                        dest_json = runpath + 'dest.json'
+                        probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + src_movie + '"'
+                        subprocess.Popen(probe_duration_dest + ' >' + ' "' + dest_json + '"', shell=True)
+                        xbmc.sleep(7000)
                         retries = 10
                         while retries > 0:
                             try:
                                 with open(dest_json, 'r') as f_dest:
-                                    xbmc.sleep(3000)
                                     dest_status = json.load(f_dest)
                                     dest_duration = dest_status["format"].get("duration")
                                 break
-                            except IOError as e:
-                                xbmc.sleep(1000)
+                            except (IOError, KeyError, AttributeError) as e:
+                                xbmc.sleep(7000)
                                 retries -= 1
                         if retries == 0:
                             notify(addon_name, "Could not open Json Dest File", icon=xbmcgui.NOTIFICATION_ERROR)
                             log("Could not open Json Dest File", xbmc.LOGERROR)
                         percent = int(100) - int(dest_duration.replace('.', '')) * int(100) / int(src_duration.replace('.', ''))
                         pDialog.update(100 - percent, 'Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
-                        f_dest.close()
                         continue
+                f_dest.close()
                 f_src.close()
                 pDialog.close()
 
             elif machine == 'armv7l':
                 ffmpegbin = runpath +  'ffmpeg'
                 ffprobebin = runpath + 'ffprobe'
+                percent = 100
+                pDialog = xbmcgui.DialogProgressBG()
+                pDialog.create('Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
                 probe_duration_src = ffprobebin + ' -v quiet -print_format json -show_format ' + '"http://' + address + ':' + port + '/index.m3u8?recording=' + recording_id + '&bw=' + bandwith + '&platform=hls5&profile=' + audio_profile + '"'
-                log(probe_duration_src, xbmc.LOGNOTICE)  #
-                subprocess.Popen(probe_duration_src + ' >' + ' "' + runpath + 'src.json' + '"', shell=True)
-                src_json = runpath + 'src.json'
-                xbmc.sleep(2000)
+                subprocess.Popen(probe_duration_src + ' >' + ' "' + src_json + '"', shell=True)
+                xbmc.sleep(10000)
                 retries = 10
                 while retries > 0:
                     try:
@@ -562,66 +634,87 @@ def manage_recordings():
                             src_status = json.load(f_src)
                             src_duration = src_status["format"].get("duration")
                         break
-                    except IOError as e:
+                    except (IOError, KeyError, AttributeError) as e:
                         xbmc.sleep(1000)
                         retries -= 1
                 if retries == 0:
                     notify(addon_name, "Could not open Json SRC File")
                     log("Could not open Json SRC File", xbmc.LOGERROR)
-                percent = 100
-                pDialog = xbmcgui.DialogProgressBG()
-                pDialog.create('Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
                 command = ffmpegbin + ' -y -i' + ffmpeg_command
-                log('running ' + command , xbmc.LOGNOTICE)
+                log('Started Downloading ' + recording_id, xbmc.LOGNOTICE)
                 running_ffmpeg = [Popen(command, shell=True)]
-
+                xbmc.sleep(10000)
                 while running_ffmpeg:
                     for proc in running_ffmpeg:
                         retcode = proc.poll()
                         if retcode is not None:  # Process finished.
                             running_ffmpeg.remove(proc)
-                            log('finished' + command, xbmc.LOGNOTICE)
+                            percent = 0
+                            pDialog.update(100 - percent, 'Downloading ' + recording_title + ' ' + quality,"%s Prozent verbleibend" % percent)
+                            xbmc.sleep(1000)
                             pDialog.close()
-                            notify(addon_name, "Download Finished")
-                            if os.path.isfile(runpath + 'src.json'):
-                                xbmcvfs.delete(runpath + 'src.json')
-                            if os.path.isfile(runpath + 'dest.json'):
-                                xbmcvfs.delete(runpath + 'dest.json')
+                            f_dest.close()
+                            f_src.close()
+                            log('finished Downloading ' + recording_id, xbmc.LOGNOTICE)
+                            notify(addon_name, recording_title + " Download Finished", icon=xbmcgui.NOTIFICATION_INFO)
+
+                            ## Copy Downloaded Files to Destination
+                            #percent = 100
+                            #src_size = xbmcvfs.Stat(src_movie).st_size()
+                            cDialog = xbmcgui.DialogProgressBG()
+                            #cDialog.create('Copy ' + recording_title + ' to Destination',"%s Prozent verbleibend" % percent)
+                            cDialog.create('Copy ' + recording_title + ' to Destination',"Status is currently not supportet, please wait until finish")
+                            xbmc.sleep(2000)
+                            log('copy ' + recording_id + ' to Destination' , xbmc.LOGNOTICE)
+                            notify(addon_name, 'Copy ' + recording_title + ' to Destiantion' , icon=xbmcgui.NOTIFICATION_INFO)
+                            #copy_movie = xbmcvfs.copy(src_movie, dest_movie)
+                            xbmcvfs.copy(src_movie, dest_movie)
+                            #while copy_movie:
+                            #    xbmc.sleep(2000)
+                            #    dest_size = xbmcvfs.Stat(dest_movie).st_size()
+                            #    log('size source is = ' + src_size, xbmc.LOGNOTICE)
+                            #    log('size destination is = ' + dest_size, xbmc.LOGNOTICE)
+                            #    log('copy ' + recording_id + ' to Destination', xbmc.LOGNOTICE)
+                            #    percent = int(100) - int(dest_size) * int(100) / int(src_size)
+                            #    cDialog.update(100 - percent, 'Copy ' + recording_title + ' to Destination', "%s Prozent verbleibend" % percent)
+                            cDialog.close()
+
+                            ## Delete all old Files
+                            xbmcvfs.rmdir(temppath, force=True)
                             break
                     else:  # # Still Running
-                        xbmc.sleep(2000)
-                        probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + storage_path + recording_title + '.ts' + '"'
-                        subprocess.Popen(probe_duration_dest + ' >' + ' "' + runpath + 'dest.json' + '"', shell=True)
-                        dest_json = runpath + 'dest.json'
+                        probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + src_movie + '"'
+                        subprocess.Popen(probe_duration_dest + ' >' + ' "' + dest_json + '"', shell=True)
+                        xbmc.sleep(7000)
                         retries = 10
                         while retries > 0:
                             try:
                                 with open(dest_json, 'r') as f_dest:
-                                    xbmc.sleep(3000)
                                     dest_status = json.load(f_dest)
                                     dest_duration = dest_status["format"].get("duration")
                                 break
-                            except IOError as e:
-                                xbmc.sleep(1000)
+                            except (IOError, KeyError, AttributeError) as e:
+                                xbmc.sleep(7000)
                                 retries -= 1
                         if retries == 0:
                             notify(addon_name, "Could not open Json Dest File", icon=xbmcgui.NOTIFICATION_ERROR)
                             log("Could not open Json Dest File", xbmc.LOGERROR)
                         percent = int(100) - int(dest_duration.replace('.', '')) * int(100) / int(src_duration.replace('.', ''))
                         pDialog.update(100 - percent, 'Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
-                        f_dest.close()
                         continue
+                f_dest.close()
                 f_src.close()
                 pDialog.close()
 
             elif machine == 'armv8l':
                 ffmpegbin = runpath +  'ffmpeg'
                 ffprobebin = runpath + 'ffprobe'
+                percent = 100
+                pDialog = xbmcgui.DialogProgressBG()
+                pDialog.create('Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
                 probe_duration_src = ffprobebin + ' -v quiet -print_format json -show_format ' + '"http://' + address + ':' + port + '/index.m3u8?recording=' + recording_id + '&bw=' + bandwith + '&platform=hls5&profile=' + audio_profile + '"'
-                log(probe_duration_src, xbmc.LOGNOTICE)  #
-                subprocess.Popen(probe_duration_src + ' >' + ' "' + runpath + 'src.json' + '"', shell=True)
-                src_json = runpath + 'src.json'
-                xbmc.sleep(2000)
+                subprocess.Popen(probe_duration_src + ' >' + ' "' + src_json + '"', shell=True)
+                xbmc.sleep(10000)
                 retries = 10
                 while retries > 0:
                     try:
@@ -630,55 +723,75 @@ def manage_recordings():
                             src_status = json.load(f_src)
                             src_duration = src_status["format"].get("duration")
                         break
-                    except IOError as e:
+                    except (IOError, KeyError, AttributeError) as e:
                         xbmc.sleep(1000)
                         retries -= 1
                 if retries == 0:
                     notify(addon_name, "Could not open Json SRC File")
                     log("Could not open Json SRC File", xbmc.LOGERROR)
-                percent = 100
-                pDialog = xbmcgui.DialogProgressBG()
-                pDialog.create('Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
                 command = ffmpegbin + ' -y -i' + ffmpeg_command
-                log('running ' + command , xbmc.LOGNOTICE)
+                log('Started Downloading ' + recording_id, xbmc.LOGNOTICE)
                 running_ffmpeg = [Popen(command, shell=True)]
-
+                xbmc.sleep(10000)
                 while running_ffmpeg:
                     for proc in running_ffmpeg:
                         retcode = proc.poll()
                         if retcode is not None:  # Process finished.
                             running_ffmpeg.remove(proc)
-                            log('finished' + command, xbmc.LOGNOTICE)
+                            percent = 0
+                            pDialog.update(100 - percent, 'Downloading ' + recording_title + ' ' + quality,"%s Prozent verbleibend" % percent)
+                            xbmc.sleep(1000)
                             pDialog.close()
-                            notify(addon_name, "Download Finished")
-                            if os.path.isfile(runpath + 'src.json'):
-                                xbmcvfs.delete(runpath + 'src.json')
-                            if os.path.isfile(runpath + 'dest.json'):
-                                xbmcvfs.delete(runpath + 'dest.json')
+                            f_dest.close()
+                            f_src.close()
+                            log('finished Downloading ' + recording_id, xbmc.LOGNOTICE)
+                            notify(addon_name, recording_title + " Download Finished", icon=xbmcgui.NOTIFICATION_INFO)
+
+                            ## Copy Downloaded Files to Destination
+                            #percent = 100
+                            #src_size = xbmcvfs.Stat(src_movie).st_size()
+                            cDialog = xbmcgui.DialogProgressBG()
+                            #cDialog.create('Copy ' + recording_title + ' to Destination',"%s Prozent verbleibend" % percent)
+                            cDialog.create('Copy ' + recording_title + ' to Destination',"Status is currently not supportet, please wait until finish")
+                            xbmc.sleep(2000)
+                            log('copy ' + recording_id + ' to Destination' , xbmc.LOGNOTICE)
+                            notify(addon_name, 'Copy ' + recording_title + ' to Destiantion' , icon=xbmcgui.NOTIFICATION_INFO)
+                            #copy_movie = xbmcvfs.copy(src_movie, dest_movie)
+                            xbmcvfs.copy(src_movie, dest_movie)
+                            #while copy_movie:
+                            #    xbmc.sleep(2000)
+                            #    dest_size = xbmcvfs.Stat(dest_movie).st_size()
+                            #    log('size source is = ' + src_size, xbmc.LOGNOTICE)
+                            #    log('size destination is = ' + dest_size, xbmc.LOGNOTICE)
+                            #    log('copy ' + recording_id + ' to Destination', xbmc.LOGNOTICE)
+                            #    percent = int(100) - int(dest_size) * int(100) / int(src_size)
+                            #    cDialog.update(100 - percent, 'Copy ' + recording_title + ' to Destination', "%s Prozent verbleibend" % percent)
+                            cDialog.close()
+
+                            ## Delete all old Files
+                            xbmcvfs.rmdir(temppath, force=True)
                             break
                     else:  # # Still Running
-                        xbmc.sleep(2000)
-                        probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + storage_path + recording_title + '.ts' + '"'
-                        subprocess.Popen(probe_duration_dest + ' >' + ' "' + runpath + 'dest.json' + '"', shell=True)
-                        dest_json = runpath + 'dest.json'
+                        probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + src_movie + '"'
+                        subprocess.Popen(probe_duration_dest + ' >' + ' "' + dest_json + '"', shell=True)
+                        xbmc.sleep(7000)
                         retries = 10
                         while retries > 0:
                             try:
                                 with open(dest_json, 'r') as f_dest:
-                                    xbmc.sleep(3000)
                                     dest_status = json.load(f_dest)
                                     dest_duration = dest_status["format"].get("duration")
                                 break
-                            except IOError as e:
-                                xbmc.sleep(1000)
+                            except (IOError, KeyError, AttributeError) as e:
+                                xbmc.sleep(7000)
                                 retries -= 1
                         if retries == 0:
                             notify(addon_name, "Could not open Json Dest File", icon=xbmcgui.NOTIFICATION_ERROR)
                             log("Could not open Json Dest File", xbmc.LOGERROR)
                         percent = int(100) - int(dest_duration.replace('.', '')) * int(100) / int(src_duration.replace('.', ''))
                         pDialog.update(100 - percent, 'Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
-                        f_dest.close()
                         continue
+                f_dest.close()
                 f_src.close()
                 pDialog.close()
 
