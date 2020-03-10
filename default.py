@@ -449,8 +449,8 @@ def manage_recordings():
                 pDialog.close()
 
             elif machine == 'x86_64':
-                ffmpegbin = runpath +  'ffmpeg'
-                ffprobebin = runpath + 'ffprobe'
+                ffmpegbin = '"' + runpath +  'ffmpeg' + '"'
+                ffprobebin = '"' + runpath + 'ffprobe' + '"'
                 percent = 100
                 pDialog = xbmcgui.DialogProgressBG()
                 pDialog.create('Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
@@ -538,8 +538,8 @@ def manage_recordings():
                 pDialog.close()
 
             elif machine == 'OSX64':
-                ffmpegbin = runpath +  'ffmpeg'
-                ffprobebin = runpath + 'ffprobe'
+                ffmpegbin = '"' + runpath +  'ffmpeg' + '"'
+                ffprobebin = '"' + runpath + 'ffprobe' + '"'
                 percent = 100
                 pDialog = xbmcgui.DialogProgressBG()
                 pDialog.create('Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
@@ -627,8 +627,8 @@ def manage_recordings():
                 pDialog.close()
 
             elif machine == 'armv7l':
-                ffmpegbin = runpath +  'ffmpeg'
-                ffprobebin = runpath + 'ffprobe'
+                ffmpegbin = '"' + runpath +  'ffmpeg' + '"'
+                ffprobebin = '"' + runpath + 'ffprobe' + '"'
                 percent = 100
                 pDialog = xbmcgui.DialogProgressBG()
                 pDialog.create('Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
@@ -650,7 +650,7 @@ def manage_recordings():
                     notify(addon_name, "Could not open Json SRC File")
                     log("Could not open Json SRC File", xbmc.LOGERROR)
                 command = ffmpegbin + ' -y -i' + ffmpeg_command
-                log('Started Downloading ' + recording_id, xbmc.LOGNOTICE)
+                log('Started Downloading ' + command + recording_id, xbmc.LOGNOTICE)
                 running_ffmpeg = [Popen(command, shell=True)]
                 xbmc.sleep(10000)
                 while running_ffmpeg:
@@ -716,8 +716,8 @@ def manage_recordings():
                 pDialog.close()
 
             elif machine == 'armv8l':
-                ffmpegbin = runpath +  'ffmpeg'
-                ffprobebin = runpath + 'ffprobe'
+                ffmpegbin = '"' + runpath +  'ffmpeg' + '"'
+                ffprobebin = '"' + runpath + 'ffprobe' + '"'
                 percent = 100
                 pDialog = xbmcgui.DialogProgressBG()
                 pDialog.create('Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
