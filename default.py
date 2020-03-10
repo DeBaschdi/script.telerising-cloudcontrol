@@ -325,15 +325,15 @@ fo.close()
 def manage_recordings():
     recording_property = li.getProperty('title').decode('utf-8')
     recording_title = recording_property.replace(' _ ',' ').replace('(', '').replace(')', '')
-    src_movie = xbmc.makeLegalFilename(temppath + recording_title + '.ts')
-    dest_movie = xbmc.makeLegalFilename(storage_path + recording_title + '.ts')
-    ffmpeg_command = li.getProperty('ffmpeg').replace('pipe:1', '"' + src_movie + '"')
+    src_json = xbmc.makeLegalFilename(os.path.join(temppath, recording_title + '_src.json'))
+    dest_json = xbmc.makeLegalFilename(os.path.join(temppath, recording_title + '_dest.json'))
+    src_movie = xbmc.makeLegalFilename(os.path.join(temppath, recording_title + '.ts'))
+    dest_movie = xbmc.makeLegalFilename(os.path.join(storage_path, recording_title + '.ts'))
+    ffmpeg_properity = li.getProperty('ffmpeg').replace('pipe:1', '"' + src_movie + '"')
+    ffmpeg_command = '"' + connection_mode + address + use_port + port + '/index.m3u8' + ffmpeg_properity.split('index.m3u8')[1]
     recording_id = li.getProperty('ffmpeg').split('&bw')[0].split('recording=')[1]
     dialog = xbmcgui.Dialog()
     planned_string = '\[PLANNED\]'
-    src_json = xbmc.makeLegalFilename(temppath + recording_title + '_src.json')
-    dest_json = xbmc.makeLegalFilename(temppath + recording_title + '_dest.json')
-
 
     if re.search(planned_string,  li.getProperty('title').replace(' _ ',' ').decode('utf-8')):
         ret_cancel = dialog.yesno(li.getLabel() + ' ' + li.getLabel2(), 'Do you want to cancel this planned Recording?')
@@ -383,7 +383,7 @@ def manage_recordings():
                 if retries == 0:
                     notify(addon_name, "Could not open Json SRC File")
                     log("Could not open Json SRC File", xbmc.LOGERROR)
-                command = ffmpegbin + ' -y -i' + ffmpeg_command
+                command = ffmpegbin + ' -y -i ' + ffmpeg_command
                 log('Started Downloading ' + recording_id, xbmc.LOGNOTICE)
                 running_ffmpeg = [Popen(command, shell=True)]
                 xbmc.sleep(10000)
@@ -472,7 +472,7 @@ def manage_recordings():
                 if retries == 0:
                     notify(addon_name, "Could not open Json SRC File")
                     log("Could not open Json SRC File", xbmc.LOGERROR)
-                command = ffmpegbin + ' -y -i' + ffmpeg_command
+                command = ffmpegbin + ' -y -i ' + ffmpeg_command
                 log('Started Downloading ' + recording_id, xbmc.LOGNOTICE)
                 running_ffmpeg = [Popen(command, shell=True)]
                 xbmc.sleep(10000)
@@ -561,7 +561,7 @@ def manage_recordings():
                 if retries == 0:
                     notify(addon_name, "Could not open Json SRC File")
                     log("Could not open Json SRC File", xbmc.LOGERROR)
-                command = ffmpegbin + ' -y -i' + ffmpeg_command
+                command = ffmpegbin + ' -y -i ' + ffmpeg_command
                 log('Started Downloading ' + recording_id, xbmc.LOGNOTICE)
                 running_ffmpeg = [Popen(command, shell=True)]
                 xbmc.sleep(10000)
@@ -650,7 +650,7 @@ def manage_recordings():
                 if retries == 0:
                     notify(addon_name, "Could not open Json SRC File")
                     log("Could not open Json SRC File", xbmc.LOGERROR)
-                command = ffmpegbin + ' -y -i' + ffmpeg_command
+                command = ffmpegbin + ' -y -i ' + ffmpeg_command
                 log('Started Downloading ' + recording_id, xbmc.LOGNOTICE)
                 running_ffmpeg = [Popen(command, shell=True)]
                 xbmc.sleep(10000)
@@ -739,7 +739,7 @@ def manage_recordings():
                 if retries == 0:
                     notify(addon_name, "Could not open Json SRC File")
                     log("Could not open Json SRC File", xbmc.LOGERROR)
-                command = ffmpegbin + ' -y -i' + ffmpeg_command
+                command = ffmpegbin + ' -y -i ' + ffmpeg_command
                 log('Started Downloading ' + recording_id, xbmc.LOGNOTICE)
                 running_ffmpeg = [Popen(command, shell=True)]
                 xbmc.sleep(10000)
