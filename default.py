@@ -11,7 +11,6 @@ import urllib
 import requests
 import xbmcvfs
 from zipfile import ZipFile
-import glob
 
 ADDON = xbmcaddon.Addon(id="script.telerising-cloudcontrol")
 addon_name = ADDON.getAddonInfo('name')
@@ -21,11 +20,21 @@ addonpath = xbmc.translatePath(ADDON.getAddonInfo('path'))
 mute_notify = ADDON.getSetting('hide-osd-messages')
 
 ## Read Telerising Server Settings
+connection_type = ADDON.getSetting('connection_type')
 address = ADDON.getSetting('address')
 port = ADDON.getSetting('port')
 storage_path = ADDON.getSetting('storage_path').decode('utf-8')
 quality = ADDON.getSetting('quality')
 audio_profile = ADDON.getSetting('audio_profile')
+
+## Translate Connection Type
+if connection_type == 'true':
+    connection_mode = "https://"
+    port = ''
+    use_port = ''
+elif connection_type == 'false':
+    connection_mode = "http://"
+    use_port = ':'
 
 ## Translate Video Settings
 if quality == '432p25':
@@ -273,7 +282,7 @@ check_ffmpeg()
 
 # Download Recording m3u from Telerising Server
 def get_recordings():
-    url = 'http://' + address + ':' + port + '/?file=recordings.m3u&bw='+ bandwith +'&platform=hls5&ffmpeg=true&profile='+ audio_profile
+    url = connection_mode + address + use_port + port + '/?file=recordings.m3u&bw='+ bandwith +'&platform=hls5&ffmpeg=true&profile='+ audio_profile
     log("Downloading recordings.m3u.... " + url + ' to ' + temppath + 'recordings.m3u', xbmc.LOGNOTICE)
     recordings = urllib.URLopener()
     recordings.retrieve( url, temppath + 'recordings.m3u')
@@ -351,13 +360,13 @@ def manage_recordings():
                 notify(addon_name, 'Sorry, Downloading is corrently not supportet under Android ',icon=xbmcgui.NOTIFICATION_ERROR)
 
             elif machine == 'AMD64':
-                ffmpegbin = runpath +  'ffmpeg.exe'
-                ffprobebin = runpath + 'ffprobe.exe'
+                ffmpegbin = '"' + runpath +  'ffmpeg.exe' + '"'
+                ffprobebin = '"' + runpath + 'ffprobe.exe' + '"'
                 percent = 100
                 pDialog = xbmcgui.DialogProgressBG()
                 pDialog.create('Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
-                probe_duration_src = ffprobebin + ' -v quiet -print_format json -show_format ' + '"http://' + address + ':' + port + '/index.m3u8?recording=' + recording_id + '&bw=' + bandwith + '&platform=hls5&profile=' + audio_profile + '"'
-                subprocess.Popen(probe_duration_src + ' >' + ' "' + src_json + '"', shell=True)
+                probe_duration_src = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + connection_mode + address + use_port + port + '/index.m3u8?recording=' + recording_id + '&bw=' + bandwith + '&platform=hls5&profile=' + audio_profile + '"' + ' >' + ' "' + src_json + '"'
+                subprocess.Popen(probe_duration_src , shell=True)
                 xbmc.sleep(10000)
                 retries = 10
                 while retries > 0:
@@ -416,8 +425,8 @@ def manage_recordings():
                             xbmcvfs.rmdir(temppath, force=True)
                             break
                     else:  # # Still Running
-                        probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + src_movie + '"'
-                        subprocess.Popen(probe_duration_dest + ' >' + ' "' + dest_json + '"', shell=True)
+                        probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + src_movie + '"' +  ' >' + ' "' + dest_json + '"'
+                        subprocess.Popen(probe_duration_dest , shell=True)
                         xbmc.sleep(7000)
                         retries = 10
                         while retries > 0:
@@ -445,8 +454,8 @@ def manage_recordings():
                 percent = 100
                 pDialog = xbmcgui.DialogProgressBG()
                 pDialog.create('Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
-                probe_duration_src = ffprobebin + ' -v quiet -print_format json -show_format ' + '"http://' + address + ':' + port + '/index.m3u8?recording=' + recording_id + '&bw=' + bandwith + '&platform=hls5&profile=' + audio_profile + '"'
-                subprocess.Popen(probe_duration_src + ' >' + ' "' + src_json + '"', shell=True)
+                probe_duration_src = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + connection_mode + address + use_port + port + '/index.m3u8?recording=' + recording_id + '&bw=' + bandwith + '&platform=hls5&profile=' + audio_profile + '"' + ' >' + ' "' + src_json + '"'
+                subprocess.Popen(probe_duration_src , shell=True)
                 xbmc.sleep(10000)
                 retries = 10
                 while retries > 0:
@@ -505,8 +514,8 @@ def manage_recordings():
                             xbmcvfs.rmdir(temppath, force=True)
                             break
                     else:  # # Still Running
-                        probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + src_movie + '"'
-                        subprocess.Popen(probe_duration_dest + ' >' + ' "' + dest_json + '"', shell=True)
+                        probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + src_movie + '"' +  ' >' + ' "' + dest_json + '"'
+                        subprocess.Popen(probe_duration_dest , shell=True)
                         xbmc.sleep(7000)
                         retries = 10
                         while retries > 0:
@@ -534,8 +543,8 @@ def manage_recordings():
                 percent = 100
                 pDialog = xbmcgui.DialogProgressBG()
                 pDialog.create('Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
-                probe_duration_src = ffprobebin + ' -v quiet -print_format json -show_format ' + '"http://' + address + ':' + port + '/index.m3u8?recording=' + recording_id + '&bw=' + bandwith + '&platform=hls5&profile=' + audio_profile + '"'
-                subprocess.Popen(probe_duration_src + ' >' + ' "' + src_json + '"', shell=True)
+                probe_duration_src = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + connection_mode + address + use_port + port + '/index.m3u8?recording=' + recording_id + '&bw=' + bandwith + '&platform=hls5&profile=' + audio_profile + '"' + ' >' + ' "' + src_json + '"'
+                subprocess.Popen(probe_duration_src , shell=True)
                 xbmc.sleep(10000)
                 retries = 10
                 while retries > 0:
@@ -594,8 +603,8 @@ def manage_recordings():
                             xbmcvfs.rmdir(temppath, force=True)
                             break
                     else:  # # Still Running
-                        probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + src_movie + '"'
-                        subprocess.Popen(probe_duration_dest + ' >' + ' "' + dest_json + '"', shell=True)
+                        probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + src_movie + '"' +  ' >' + ' "' + dest_json + '"'
+                        subprocess.Popen(probe_duration_dest , shell=True)
                         xbmc.sleep(7000)
                         retries = 10
                         while retries > 0:
@@ -623,8 +632,8 @@ def manage_recordings():
                 percent = 100
                 pDialog = xbmcgui.DialogProgressBG()
                 pDialog.create('Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
-                probe_duration_src = ffprobebin + ' -v quiet -print_format json -show_format ' + '"http://' + address + ':' + port + '/index.m3u8?recording=' + recording_id + '&bw=' + bandwith + '&platform=hls5&profile=' + audio_profile + '"'
-                subprocess.Popen(probe_duration_src + ' >' + ' "' + src_json + '"', shell=True)
+                probe_duration_src = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + connection_mode + address+ use_port + port + '/index.m3u8?recording=' + recording_id + '&bw=' + bandwith + '&platform=hls5&profile=' + audio_profile + '"' + ' >' + ' "' + src_json + '"'
+                subprocess.Popen(probe_duration_src , shell=True)
                 xbmc.sleep(10000)
                 retries = 10
                 while retries > 0:
@@ -683,8 +692,8 @@ def manage_recordings():
                             xbmcvfs.rmdir(temppath, force=True)
                             break
                     else:  # # Still Running
-                        probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + src_movie + '"'
-                        subprocess.Popen(probe_duration_dest + ' >' + ' "' + dest_json + '"', shell=True)
+                        probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + src_movie + '"' +  ' >' + ' "' + dest_json + '"'
+                        subprocess.Popen(probe_duration_dest , shell=True)
                         xbmc.sleep(7000)
                         retries = 10
                         while retries > 0:
@@ -712,8 +721,8 @@ def manage_recordings():
                 percent = 100
                 pDialog = xbmcgui.DialogProgressBG()
                 pDialog.create('Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
-                probe_duration_src = ffprobebin + ' -v quiet -print_format json -show_format ' + '"http://' + address + ':' + port + '/index.m3u8?recording=' + recording_id + '&bw=' + bandwith + '&platform=hls5&profile=' + audio_profile + '"'
-                subprocess.Popen(probe_duration_src + ' >' + ' "' + src_json + '"', shell=True)
+                probe_duration_src = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + connection_mode + address + use_port + port + '/index.m3u8?recording=' + recording_id + '&bw=' + bandwith + '&platform=hls5&profile=' + audio_profile + '"' + ' >' + ' "' + src_json + '"'
+                subprocess.Popen(probe_duration_src , shell=True)
                 xbmc.sleep(10000)
                 retries = 10
                 while retries > 0:
@@ -772,8 +781,8 @@ def manage_recordings():
                             xbmcvfs.rmdir(temppath, force=True)
                             break
                     else:  # # Still Running
-                        probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + src_movie + '"'
-                        subprocess.Popen(probe_duration_dest + ' >' + ' "' + dest_json + '"', shell=True)
+                        probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + src_movie + '"' +  ' >' + ' "' + dest_json + '"'
+                        subprocess.Popen(probe_duration_dest , shell=True)
                         xbmc.sleep(7000)
                         retries = 10
                         while retries > 0:
@@ -797,14 +806,14 @@ def manage_recordings():
 
     ## Play
     if ret == 1:
-        url = 'http://' + address + ':' + port + '/index.m3u8?recording=' + recording_id + '&bw=' + bandwith + '&platform=hls5&ffmpeg=true&profile=' + audio_profile
+        url = connection_mode + address + use_port + port + '/index.m3u8?recording=' + recording_id + '&bw=' + bandwith + '&platform=hls5&ffmpeg=true&profile=' + audio_profile
         log("Opening Recording " + recording_id + " for direct Play", xbmc.LOGNOTICE)
         xbmc.Player().play(url, li)
 
     ## Delete
     if ret == 2 or ret_cancel == True:
         log("Selectet Recording ID for Delete = "  + recording_id, xbmc.LOGNOTICE)
-        url = 'http://' + address + ':' + port + '/index.m3u8?recording=' + recording_id + '&remove=true'
+        url = connection_mode + address + use_port + port + '/index.m3u8?recording=' + recording_id + '&remove=true'
         log("Selectet Recording ID for Delete = " + url, xbmc.LOGNOTICE)
         xbmc.sleep(1000)
         notify(addon_name, "Deleting " + recording_title + ' from Cloud ...')
