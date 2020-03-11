@@ -240,20 +240,45 @@ selected = dialog.select('Manage Cloud Recordings', recordings, useDetails=True)
 li = recordings[selected]
 fo.close()
 
+## Properity Definitions
+recording_id = li.getProperty('ffmpeg').split('&bw')[0].split('recording=')[1]
+recording_property = li.getProperty('title').decode("utf-8")
+recording_title = recording_property.replace('_', '-')
+src_json = xbmc.makeLegalFilename(os.path.join(temppath, recording_id + '_src.json'))
+dest_json = xbmc.makeLegalFilename(os.path.join(temppath, recording_id + '_dest.json'))
+src_movie = xbmc.makeLegalFilename(os.path.join(temppath, recording_id + '.ts'))
+dest_movie = xbmc.makeLegalFilename(os.path.join(storage_path, recording_title + '.ts').encode('utf-8'))
+ffmpeg_properity = li.getProperty('ffmpeg').replace('pipe:1', '"' + src_movie + '"')
+ffmpeg_command = '"' + connection_mode + address + use_port + port + '/index.m3u8' + ffmpeg_properity.split('index.m3u8')[1]
+dialog = xbmcgui.Dialog()
+planned_string = '\[PLANNED\]'
+
+def move_to_destination():
+    ## Copy Downloaded Files to Destination
+    if xbmcvfs.exists(os.path.join(temppath, recording_title + '.ts')):
+
+        cDialog = xbmcgui.DialogProgressBG()
+        cDialog.create('Copy ' + recording_title + ' to Destination',"Status is currently not supportet, please wait until finish")
+        xbmc.sleep(2000)
+        log('copy ' + src_movie + ' to Destination', xbmc.LOGNOTICE)
+        notify(addon_name, 'Copy ' + recording_title + ' to Destiantion', icon=xbmcgui.NOTIFICATION_INFO)
+        done = xbmcvfs.copy(src_movie, dest_movie)
+        cDialog.close()
+
+        ## Delete all old Files if the copyrprocess was successful
+        if done == True:
+            log(recording_id + ' has been copied', xbmc.LOGNOTICE)
+            notify(addon_name, recording_id + ' has been copied', icon=xbmcgui.NOTIFICATION_INFO)
+            delete_tempfiles()
+        else:
+            log(recording_id + ' cannot be copied', xbmc.LOGERROR)
+            notify(addon_name, recording_id + ' cannot be copied', icon=xbmcgui.NOTIFICATION_ERROR)
+    else:
+        notify(addon_name, "Could not open " + src_movie, icon=xbmcgui.NOTIFICATION_ERROR)
+        log("Could not open " + src_movie, xbmc.LOGERROR)
+
 #Select Download / Play / Delete from Listitem
 def manage_recordings():
-    recording_id = li.getProperty('ffmpeg').split('&bw')[0].split('recording=')[1]
-    recording_property = li.getProperty('title').decode("utf-8")
-    recording_title = recording_property.replace('_','-')
-    src_json = xbmc.makeLegalFilename(os.path.join(temppath, recording_id  + '_src.json'))
-    dest_json = xbmc.makeLegalFilename(os.path.join(temppath, recording_id  + '_dest.json'))
-    src_movie = xbmc.makeLegalFilename(os.path.join(temppath, recording_id  + '.ts'))
-    dest_movie = xbmc.makeLegalFilename(os.path.join(storage_path, recording_title + '.ts').encode('utf-8'))
-    ffmpeg_properity = li.getProperty('ffmpeg').replace('pipe:1', '"' + src_movie + '"')
-    ffmpeg_command = '"' + connection_mode + address + use_port + port + '/index.m3u8' + ffmpeg_properity.split('index.m3u8')[1]
-    dialog = xbmcgui.Dialog()
-    planned_string = '\[PLANNED\]'
-
     if re.search(planned_string,  li.getProperty('title').replace(' _ ',' ').decode('utf-8')):
         ret_cancel = dialog.yesno(li.getLabel() + ' ' + li.getLabel2(), 'Do you want to cancel this planned Recording?')
         ret = 'skipped'
@@ -274,7 +299,7 @@ def manage_recordings():
                 log('Downloading is corrently not supportet under Android Sorry...', xbmc.LOGNOTICE)
                 notify(addon_name, 'Sorry, Downloading is corrently not supportet under Android ',icon=xbmcgui.NOTIFICATION_ERROR)
 
-            else :
+            else:
                 ffmpegbin = '"' + ffmpeg + '"'
                 ffprobebin = '"' + ffprobe + '"'
                 percent = 100
@@ -295,7 +320,7 @@ def manage_recordings():
                         xbmc.sleep(1000)
                         retries -= 1
                 if retries == 0:
-                    notify(addon_name, "Could not open Json SRC File")
+                    notify(addon_name, "Could not open Json SRC File", icon=xbmcgui.NOTIFICATION_ERROR)
                     log("Could not open Json SRC File", xbmc.LOGERROR)
                 command = ffmpegbin + ' -y -i ' + ffmpeg_command
                 log('Started Downloading ' + recording_id, xbmc.LOGNOTICE)
@@ -314,35 +339,11 @@ def manage_recordings():
                             f_src.close()
                             log('finished Downloading ' + recording_id, xbmc.LOGNOTICE)
                             notify(addon_name, recording_title + " Download Finished", icon=xbmcgui.NOTIFICATION_INFO)
-
-                            ## Copy Downloaded Files to Destination
-                            #percent = 100
-                            #src_size = xbmcvfs.Stat(src_movie).st_size()
-                            cDialog = xbmcgui.DialogProgressBG()
-                            #cDialog.create('Copy ' + recording_title + ' to Destination',"%s Prozent verbleibend" % percent)
-                            cDialog.create('Copy ' + recording_title + ' to Destination',"Status is currently not supportet, please wait until finish")
-                            xbmc.sleep(2000)
-                            log('copy ' + src_movie + ' to Destination' , xbmc.LOGNOTICE)
-                            notify(addon_name, 'Copy ' + recording_title + ' to Destiantion' , icon=xbmcgui.NOTIFICATION_INFO)
-                            done = xbmcvfs.copy(src_movie, dest_movie)
-                            #while copy_movie:
-                            #    xbmc.sleep(2000)
-                            #    dest_size = xbmcvfs.Stat(dest_movie).st_size()
-                            #    log('size source is = ' + src_size, xbmc.LOGNOTICE)
-                            #    log('size destination is = ' + dest_size, xbmc.LOGNOTICE)
-                            #    log('copy ' + recording_id + ' to Destination', xbmc.LOGNOTICE)
-                            #    percent = int(100) - int(dest_size) * int(100) / int(src_size)
-                            #    cDialog.update(100 - percent, 'Copy ' + recording_title + ' to Destination', "%s Prozent verbleibend" % percent)
-                            cDialog.close()
-
-                            ## Delete all old Files if the copyrprocess was successful
-                            if done == True :
-                                log(recording_id + ' has been copied', xbmc.LOGNOTICE)
-                                notify(addon_name, recording_id + ' has been copied',icon=xbmcgui.NOTIFICATION_INFO)
-                                delete_tempfiles()
-                            else :
-                                log(recording_id + ' cannot be copied', xbmc.LOGERROR)
-                                notify(addon_name, recording_id + ' cannot be copied',icon=xbmcgui.NOTIFICATION_ERROR)
+                            xbmc.sleep(3000)
+                            f_dest.close()
+                            f_src.close()
+                            pDialog.close()
+                            move_to_destination()
 
                     else:  # # Still Running
                         probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + src_movie + '"' +  ' >' + ' "' + dest_json + '"'
@@ -365,9 +366,6 @@ def manage_recordings():
                         percent = int(100) - int(dest_duration.replace('.', '')) * int(100) / int(src_duration.replace('.', ''))
                         pDialog.update(100 - percent, 'Downloading ' + recording_title + ' ' + quality, "%s Prozent verbleibend" % percent)
                         continue
-                f_dest.close()
-                f_src.close()
-                pDialog.close()
 
     ## Play
     if ret == 1:
