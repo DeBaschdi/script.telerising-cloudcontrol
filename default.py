@@ -250,12 +250,11 @@ src_movie = xbmc.makeLegalFilename(os.path.join(temppath, recording_id + '.ts'))
 dest_movie = xbmc.makeLegalFilename(os.path.join(storage_path, recording_title + '.ts').encode('utf-8'))
 ffmpeg_properity = li.getProperty('ffmpeg').replace('pipe:1', '"' + src_movie + '"')
 ffmpeg_command = '"' + connection_mode + address + use_port + port + '/index.m3u8' + ffmpeg_properity.split('index.m3u8')[1]
-dialog = xbmcgui.Dialog()
 planned_string = '\[PLANNED\]'
 
 def move_to_destination():
     ## Copy Downloaded Files to Destination
-    if xbmcvfs.exists(os.path.join(temppath, recording_title + '.ts')):
+    if xbmcvfs.exists(src_movie):
 
         cDialog = xbmcgui.DialogProgressBG()
         cDialog.create('Copy ' + recording_title + ' to Destination',"Status is currently not supportet, please wait until finish")
@@ -279,6 +278,7 @@ def move_to_destination():
 
 #Select Download / Play / Delete from Listitem
 def manage_recordings():
+    dialog = xbmcgui.Dialog()
     if re.search(planned_string,  li.getProperty('title').replace(' _ ',' ').decode('utf-8')):
         ret_cancel = dialog.yesno(li.getLabel() + ' ' + li.getLabel2(), 'Do you want to cancel this planned Recording?')
         ret = 'skipped'
