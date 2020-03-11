@@ -7,18 +7,18 @@ import xbmc
 import xbmcaddon
 import xbmcgui
 import json
-import urllib
 import requests
 import xbmcvfs
 from zipfile import ZipFile
+import glob
 
 ADDON = xbmcaddon.Addon(id="script.telerising-cloudcontrol")
 addon_name = ADDON.getAddonInfo('name')
 addon_version = ADDON.getAddonInfo('version')
 datapath = xbmc.translatePath(ADDON.getAddonInfo('profile'))
 addonpath = xbmc.translatePath(ADDON.getAddonInfo('path'))
-runpath = xbmc.translatePath('special://masterprofile/addon_data/script.telerising-cloudcontrol/bin')
-temppath = xbmc.translatePath('special://masterprofile/addon_data/script.telerising-cloudcontrol/temp')
+runpath = os.path.join(datapath, "bin")
+temppath = os.path.join(datapath, "temp")
 mute_notify = ADDON.getSetting('hide-osd-messages')
 
 ## Read Telerising Server Settings
@@ -110,6 +110,11 @@ def create_folders():
         os.makedirs(temppath, mode=0o777)
 create_folders()
 
+def delete_tempfiles():
+    trash = glob.glob(os.path.join(temppath, '*'))
+    for f in trash:
+        os.remove(f)
+
 ## Create definitions depending on the machine type
 if machine == 'x86_64':
     url_ffprobe = 'https://github.com/DeBaschdi/packages/raw/master/ffprobe_x86_64.zip'
@@ -183,11 +188,11 @@ def check_ffmpeg():
     if machine == 'aarch64':
         log("ffmpeg installing on Android is currently not supportet", xbmc.LOGNOTICE)
     else :
-        if os.path.isfile(ffmpeg):
+        if xbmcvfs.exists(ffmpeg):
             log("ffmpeg exist, skip installing", xbmc.LOGNOTICE)
         else:
             install_files()
-        if os.path.isfile(ffprobe):
+        if xbmcvfs.exists(ffprobe):
             log("ffprobe exist, skip installing", xbmc.LOGNOTICE)
         else:
             install_files()
@@ -198,9 +203,10 @@ recordings_m3u = os.path.join(temppath, 'recordings.m3u')
 def get_recordings():
     url = connection_mode + address + use_port + port + '/?file=recordings.m3u&bw='+ bandwith +'&platform=hls5&ffmpeg=true&profile='+ audio_profile
     log("Downloading recordings.m3u.... " + url + ' to ' + recordings_m3u, xbmc.LOGNOTICE)
-    recordings = urllib.URLopener()
-    recordings.retrieve( url,recordings_m3u)
+    download_m3u = requests.get(url)
+    open(recordings_m3u, 'wb').write(download_m3u.content)
 get_recordings()
+
 
 ## Read m3u and Translate to Listitem ##
 
@@ -238,11 +244,11 @@ fo.close()
 def manage_recordings():
     recording_id = li.getProperty('ffmpeg').split('&bw')[0].split('recording=')[1]
     recording_property = li.getProperty('title').decode("utf-8")
-    recording_title = recording_property.replace(' _ ',' ').replace('(', '').replace(')', '')
-    src_json = xbmc.makeLegalFilename(os.path.join(temppath, recording_title + '_src.json'))
-    dest_json = xbmc.makeLegalFilename(os.path.join(temppath, recording_title + '_dest.json'))
-    src_movie = xbmc.makeLegalFilename(os.path.join(temppath, recording_title + '.ts'))
-    dest_movie = xbmc.makeLegalFilename(os.path.join(storage_path, recording_title + '.ts'))
+    recording_title = recording_property.replace('_','-')
+    src_json = xbmc.makeLegalFilename(os.path.join(temppath, recording_id  + '_src.json'))
+    dest_json = xbmc.makeLegalFilename(os.path.join(temppath, recording_id  + '_dest.json'))
+    src_movie = xbmc.makeLegalFilename(os.path.join(temppath, recording_id  + '.ts'))
+    dest_movie = xbmc.makeLegalFilename(os.path.join(storage_path, recording_title + '.ts').encode('utf-8'))
     ffmpeg_properity = li.getProperty('ffmpeg').replace('pipe:1', '"' + src_movie + '"')
     ffmpeg_command = '"' + connection_mode + address + use_port + port + '/index.m3u8' + ffmpeg_properity.split('index.m3u8')[1]
     dialog = xbmcgui.Dialog()
@@ -316,10 +322,9 @@ def manage_recordings():
                             #cDialog.create('Copy ' + recording_title + ' to Destination',"%s Prozent verbleibend" % percent)
                             cDialog.create('Copy ' + recording_title + ' to Destination',"Status is currently not supportet, please wait until finish")
                             xbmc.sleep(2000)
-                            log('copy ' + src_movie + ' to ' + dest_movie , xbmc.LOGNOTICE)
+                            log('copy ' + src_movie + ' to Destination' , xbmc.LOGNOTICE)
                             notify(addon_name, 'Copy ' + recording_title + ' to Destiantion' , icon=xbmcgui.NOTIFICATION_INFO)
-                            #copy_movie = xbmcvfs.copy(src_movie, dest_movie)
-                            xbmcvfs.copy(src_movie, dest_movie)
+                            done = xbmcvfs.copy(src_movie, dest_movie)
                             #while copy_movie:
                             #    xbmc.sleep(2000)
                             #    dest_size = xbmcvfs.Stat(dest_movie).st_size()
@@ -330,9 +335,15 @@ def manage_recordings():
                             #    cDialog.update(100 - percent, 'Copy ' + recording_title + ' to Destination', "%s Prozent verbleibend" % percent)
                             cDialog.close()
 
-                            ## Delete all old Files
-                            xbmcvfs.rmdir(temppath, force=True)
-                            break
+                            ## Delete all old Files if the copyrprocess was successful
+                            if done == True :
+                                log(recording_id + ' has been copied', xbmc.LOGNOTICE)
+                                notify(addon_name, recording_id + ' has been copied',icon=xbmcgui.NOTIFICATION_INFO)
+                                delete_tempfiles()
+                            else :
+                                log(recording_id + ' cannot be copied', xbmc.LOGERROR)
+                                notify(addon_name, recording_id + ' cannot be copied',icon=xbmcgui.NOTIFICATION_ERROR)
+
                     else:  # # Still Running
                         probe_duration_dest = ffprobebin + ' -v quiet -print_format json -show_format ' + '"' + src_movie + '"' +  ' >' + ' "' + dest_json + '"'
                         subprocess.Popen(probe_duration_dest , shell=True)
@@ -372,12 +383,15 @@ def manage_recordings():
         xbmc.sleep(1000)
         notify(addon_name, "Deleting " + recording_title + ' from Cloud ...')
         xbmc.sleep(5000)
-        delete_recording = urllib.URLopener()
-        delete_recording.retrieve(url, runpath +'urlrequest.txt')
+
+        urlrequest_location = os.path.join(temppath, 'urlrequest.txt')
+        delete_recording = requests.get(url)
+        open(urlrequest_location, 'wb').write(delete_recording.content)
+
         retries = 5
         while retries > 0:
             try:
-                f = open(runpath +'urlrequest.txt', 'r')
+                f = open(urlrequest_location, 'r')
                 file_contents = f.read()
                 break
             except IOError as e:
